@@ -26,4 +26,5 @@ git log 查看历史提交信息
 git log id   可以查看指定id 的 记录
 
 git log -1   查看最后一次的提交记录
+12
 ```
