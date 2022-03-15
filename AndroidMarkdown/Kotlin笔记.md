@@ -1626,3 +1626,196 @@ class MySet<T>(val helperSet:HashSet<T>):Set<T> by helperSet{
         val p by Delegate()
     }
    ```
+
+## 泛型的高级特性
+
+### 对泛型进行实化
+
+#### 背景
+jdk1.5之前java没有泛型功能，当时诸如List这样的数据结构可以存储任意类型的数据，取出来的时候也必须要手动向下转型(麻烦,危险),比如我们在List中存储了Integer和String类型的参数，取出来的时候要把他们转型成同一类型，然后就会报类型转换异常
+#### 类型擦除机制
+jdk1.5开始引入了泛型功能。
+**类型擦除机制是怎么实现的呢?**
+- 泛型对于类型的约束只在编译期间存在，运行的时候仍然按照jdk1.5之前的机制运行，JVM是识别不出来我们在代码中指定的泛型类型的。比如我们创建一个List<String>的集合，虽然在编译时期只能向集合中添加字符串类型的元素，但是在运行期间JVM并不能知道他本来只打算包含那个类型的元素，JVM只能识别出这个集合是个List
+- 如今所有基于JVM的语言的泛型功能都是通过类型擦除机制实现的，也包括kotlin
+- 但是不同的是kotlin提供了内联函数的概念,内联函数的代码会在编译期间自动替换到调用他的地方，这样就不存在什么泛型被类型擦除的问题了，因为代码在编译的时候会直接使用实际的类型来替代内联函数中的泛型声明
+[![bXsFne.png](https://s1.ax1x.com/2022/03/14/bXsFne.png)](https://imgtu.com/i/bXsFne)
+
+**具体要怎么写才能把泛型实化?**
+- 首先该函数必须是一个内联函数，也就是要用inline关键字来修饰该函数
+- 其次在声明泛型的地方必须加上reified关键字来表示该泛型要进行实化
+```kotlin
+inline fun <reified T> getGenericType(){
+}
+```
+**可以实现一个获取泛型实际类型的功能**
+```kotlin
+inline fun <reified T>getGenericType()=T::class.java
+
+fun main(){
+    val result1= getGenericType<String>()
+    println(result1)
+}
+会把泛型的实际类型打印出来
+```
+
+### 泛型实化的应用
+```kotlin
+val intent=Intent(context,MainActivity::class.java)
+context.startAcivity(intent)
+
+每次都写一个MainActivity::class.java不太方便
+我们可以泛型实化利用泛型实化写成这样
+
+inline fun <reified T> startActivity(context: Context){
+    val intent=Intent(context,T::class.java)
+    context.startActivity(intent)
+}
+
+startActivity<MainActivity>(context)
+
+但是这样写就几乎用不到Intent里面的一些参数了，所以我们可以使用高级函数来优化
+
+inline fun <reified T> startActivity(context: Context,block:Intent.()->Unit){
+    val intent=Intent(context,T::class.java)
+    intent.block()
+    context.startActivity(intent)
+}
+
+startActivity<MainActivity>(context){
+    putExtra("添加信息")
+}
+```
+
+### 泛型的协变
+**重要的约定**
+- 在泛型类或者泛型接口的方法中，他的参数列表是接收数据的地方，叫做in位置
+- 他的返回值是输出数据的地方，因此叫做out位置
+[![bjawUP.png](https://s1.ax1x.com/2022/03/15/bjawUP.png)](https://imgtu.com/i/bjawUP)
+
+**一个例子**
+```kotlin
+open class Person(val name:String,val age:Int)
+class Teacher(name:String,age:Int):Person(name,age)
+class Student(name:String,age:Int):Person(name,age)
+
+我们很容易看出Student是Person的子类，如果某个方法需要传入List<Person>的话我们能不能传入List<Student>呢?
+答案是java中是不能的，因为List<Student>不能够成为List<Person>的子类,否则可能存在类型转换的问题
+```
+**这里再举一个例子说明**
+```kotlin
+//SimpleData是一个泛型类，他的内部封装了一个泛型data字段
+class SimpleData<T>{
+    private var data:T?=null
+
+    fun set(t:T){
+        data=t
+    }
+
+    fun get():T?=data
+}
+
+//下面我们假设如果编程语言允许向某个接收SimpleData<Person>参数的方法传入SimpleData<Student>实例的话
+fun main(){
+    val student=Student("Tom",19)
+    val data=SimpleData<Student>()
+    data.set(student)
+
+    handleSimpleData(data)//实际这里是会报错的，假设这里能编译通过
+    val studentData=data.get()
+    println(studentData)
+}
+
+fun handleSimpleData(data: SimpleData<Person>){
+    val teacher=Teacher("Jom",39)
+    data.set(teacher)
+}
+
+/*handleSimpleData(data)如果能够正确运行的话，那么当前的data中既有student也有teacher
+但是开始初始化的时候已经指定了SimpleData中的泛型是Student，所以get返回值应该是一个student，但是data里面却有一个teacher
+这时就会发生类型转换异常了*/
+```
+
+#### 泛型协变的定义
+如果定义了一个`MyClass<T>`的泛型类,其中`A是B`的子类型，同时`MyClass<A>`也是`MyClass<B>`的子类型，那么我们就可以称`MyClass`在`T`这个泛型上是协变的
+```kotlin
+open class Person(val name:String,val age:Int)
+class Teacher(name:String,age:Int):Person(name,age)
+class Student(name:String,age:Int):Person(name,age)
+
+//SimpleData是一个泛型类，他的内部封装了一个泛型data字段
+class SimpleData<out T>(private val data:T?){
+//在T的前面加上out关键字，就表明T只能在out位置出现而不能早in位置出现，而且泛型类里面的元素是只读的(为了保证安全)
+    fun get():T?=data
+}
+fun main(){
+    val student=Student("Tom",19)
+    val data=SimpleData<Student>(student)
+
+    handleSimpleData(data)//实际这里是会报错的，假设这里能编译通过
+    val studentData=data.get()
+    println(studentData)
+}
+
+fun handleSimpleData(data: SimpleData<Person>){
+    println(data.get())
+}
+```
+**接下来我们来看看List的简化版源码**
+```kotlin
+public interface List<out E>:Collection<E>{
+    override val size: Int
+
+    override fun contains(element: @UnsafeVariance E): Boolean 
+
+    override fun isEmpty(): Boolean 
+
+    override fun iterator(): Iterator<E> 
+    
+    public operator fun get(index:Int)
+}
+```
+`List`在`E`之前加上了`out`，说明`List`在泛型E上是可以协变的，
+但`contains的in里面出现了泛型``E`，这就会有类型转换的安全隐患
+但是其实`contains只`是为了比较字符，并不会改变`List`里面的元素，所以我们会加上一个`@UnsafeVariance`来说明允许E出现在这个`in位`置
+
+
+### 泛型的逆变
+#### 定义
+有`MyClass<T>`的泛型类，其中`A是B`的子类型，同时`MyClass<B>又是MyClass<A>`的子类型，那么我们就称`MyClass`是在T这个泛型上是逆变的
+[![bjrtKS.png](https://s1.ax1x.com/2022/03/15/bjrtKS.png)](https://imgtu.com/i/bjrtKS)
+**看看例子好学习**
+```kotlin
+interface Transformer<T>{
+    fun transform(t:T):String//T类型的参数参数会在经过转化变成String类型
+}
+open class Person(val name:String,val age:Int)
+class Teacher(name:String,age:Int):Person(name,age)
+class Student(name:String,age:Int):Person(name,age)
+
+fun main(){
+    val trans=object:Transformer<Person>{
+        override fun transform(t: Person): String {
+            return "${t.name}今年${t.age}"
+        }
+    }
+    handleTransformer(trans)
+//会报错这行代码,是因为Transformer<Person>并不是Transformer<Student>子类型,又是类型转换异常
+}
+
+fun handleTransformer(trans:Transformer<Student>){
+    val student=Student("Tom",19)
+    trans.transform(student)
+}
+```
+这里就要用到逆变了
+```kotlin
+interface Transformer<in T>{
+    fun transform(t:T):String//T类型的参数参数会在经过转化变成String类型
+}
+
+泛型T前面加上一个T，就指明了T只能出现在in位置
+
+同样的也是可以用@UnsafeVariance来把T放在out位置，但是这样就又容易引起类型转换异常了
+```
+**哎呀，逆变和协变还是有点不理解**

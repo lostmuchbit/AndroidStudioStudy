@@ -577,7 +577,7 @@ fun main(){
     Util.doAction2()
 }*/
 
-class Money(var v:Int){
+/*class Money(var v:Int){
     operator fun plus(m:Money): Int {
         return v+m.v
     }
@@ -588,4 +588,4 @@ class Money(var v:Int){
 fun main(){
     println(Money(10)+ Money(10))
     println(Money(10)+10)
-}
+}*/
