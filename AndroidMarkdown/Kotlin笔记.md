@@ -1819,3 +1819,241 @@ interface Transformer<in T>{
 同样的也是可以用@UnsafeVariance来把T放在out位置，但是这样就又容易引起类型转换异常了
 ```
 **哎呀，逆变和协变还是有点不理解**
+
+
+## 使用协程编写高效的并发程序
+可以把协程理解成轻量级的线程，使用协程可以仅在编程语言的层面就能实现不同协程之间的变换，从而提高并发编程的运行效率
+**比如**
+```kotlin
+fun foo(){
+    print(1)
+    print(2)
+    print(3)
+}
+
+fun bar(){
+    print(4)
+    print(5)
+    print(6)
+}
+```
+在没有开启协程的情况下，理论上先后调用foo()和bar()得到的结果应该是123456，而如果使用了协程，在协程A中调用foo(),在协程B中调用bar()，，虽然他们运行在同一个线程当中，但是在运行foo()时随时都会被挂起，转而去执行bar()，相反一样，最总的输出结果就不确定了。
+协程允许我们在单线程中模拟多线编程的效果
+
+### 协程的基本用法
+Kotlin并没有把协程纳入标准库的API中
+```kotlin
+需要导包
+implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.3'
+//纯kotlin程序的包
+implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.3.3'
+//Android程序的包
+```
+- `GlobalScope.launch()`
+  ```kotlin
+    fun main(){
+        GlobalScope.launch {
+            //GlobalScope.launch函数可以创建一个协程的作用域，这样lambda表达式就是在协程中运行的了
+            //但是你会发现点击运行输出根本没有在控制台打印出来
+            //这是因为GlobalScope.launch函数每次创建的都是一个顶层协程
+            //这种携程当应用程序运行结束的时候会跟着一起结束
+            //日志无法打印出来就是因为代码块中的代码还没来得及运行程序就结束了
+            println("程序在协程里面执行")
+
+            //delay()函数可以让当前的协程延迟指定时间再执行
+            //delay()和sleep()不相同
+            //delay()是非阻塞式的挂起函数，他只会挂起当前的协程，并不会影响其他的协程运行
+            //Thread.sleep()是阻塞整个线程，这样运行再该线程下的所有协程都会被中断
+            //delay()函数只能再当前作用域或者其他挂起函数中调用
+            delay(1500)
+            //会发现下面的这行日志没有被打印,因为上面打印完了就被挂起了1500，但是线程只会被阻塞1000
+            //所以还没运行这行代码线程就结束了，协程也就被强制中断了
+            println("程序运行完毕")
+        }
+
+        //想要协程中的代码运行完，就大概把协程阻塞一段时间，确保协程运行完了就行
+        Thread.sleep(1000)
+        //但是这样写只是让线程沉睡了1秒钟，要是协程在这一秒钟里面没有运行完，也会被强制中断
+    }
+  ```
+- `runBlock()`
+  ```kotlin
+    fun main(){
+        runBlocking{
+            //runBlocking也会创建一个协程的作用域
+            //但是他能保证协程作用域内的所有代码和子协程没有全部执行完的时候就会一直阻塞当前线程
+            //但是他一般只在测试的时候用，因为它会引起性能上的问题
+            println("程序在协程里面执行")
+
+            delay(1500)
+
+            println("程序运行完毕")
+        }
+
+        //想要协程中的代码运行完，就大概把协程阻塞一段时间，确保协程运行完了就行
+        Thread.sleep(1000)
+        //但是这样写只是让线程沉睡了1秒钟，要是协程在这一秒钟里面没有运行完，也会被强制中断
+    }
+  ```
+- `launch()`
+  ```kotlin
+    fun main(){
+        val start=System.currentTimeMillis()
+        runBlocking{
+            for (i in 0..100000) {//创建10个子协程
+                launch { //launch必须要在协程的作用域中才能被调用
+                    println("$i start")//而且创建的子协程受外层作用域影响，如果外层作用域结束了，那么子协程也会结束
+                    delay(1000)
+                    println("$i end")
+                }
+                launch {
+                    println("$i begin")
+                    delay(1000)
+                    println("$i finish")
+                }
+            }
+        }
+        val end=System.currentTimeMillis()
+        println(end-start)//开启10万个协程打印只需要2420毫秒,要是10万个线程早就oom异常了
+    }
+  ```
+  但是当launch里面逻辑复杂的时候,就需要把逻辑写在单独的方法里面了，这是就有问题了，launch是由作用域要求的,那么再函数中就无法使用delay()了，**kotlin为我们提供了一个suspend关键字来解决这个问题**
+  ```kotlin
+    suspend fun printWord(){
+        println("0")
+        delay(1000)
+    }
+    suspend只能把一个函数声明成挂起函数，是无法给他提供作用域的，比如再printWord()中是无法使用launch的，这个问题可以用coroutineScope()函数解决
+  ```
+- `coroutineScope()`
+  ```kotlin
+    suspend fun printDot() = coroutineScope {// coroutineScope也是一个挂起函数，因此可以在任何其他挂起函数中调用
+        //他的特点时会继承外部的协程作用域并且创建一个子作用域，借助这个特点就可以给任意挂起函数添加协程作用域了
+        launch { 
+            println(".")
+            delay(1000)
+        }
+    }
+  ```
+  ```kotlin
+    fun main(){
+        runBlocking {
+            //runBlocking会阻塞当前线程
+            coroutineScope {
+                /*coroutineScope可以保证自己的作用域内的代码和子协程全部执行万之前会一直阻塞当前的协程*/
+                launch {
+                    for (i in 0..10){
+                        println(i)
+                        delay(1000)
+                    }
+                }
+            }
+            println("coroutineScope函数结束")
+        }
+        println("runBlocking结束")
+    }
+  ```
+
+##### 更多的作用域构建器
+runBlocking由于会阻塞线程，因此只建议再测试环境下使用。而GlobalScope.launch由于每次创建的都是顶层函数，一般也不建议使用，除非创建者本身就是想创建一个顶层协程。
+
+下面例举是的实际项目中比较常用的写法：
+```kotlin
+fun test6() {
+    val job = Job()//创建一个Job对象
+    val scope = CoroutineScope(job)//把job对象传到CoroutineScope函数中，会返回一个CoroutineScope对象
+    scope.launch {
+
+    }
+    job.cancel()
+}
+```
+这里先创建了一个`CoroutineScope`对象，有了这个对象之后就随时可以调用它的`launch`函数来创建协程。
+
+这样创建的协程都会被关联到这个job对象中，取消的时候直接调用`job.cancel()`即可。
+
+由于这个函数的返回值永远是一个Job对象,所以这种方式获取不到协程的执行结果，如何获取协程的执行结果呢，那就需要借助**async函数**来实现。
+```kotlin
+fun main() {
+    runBlocking {
+        // 调用await()方法来获取async函数的执行结果
+        val result = async {
+            //async函数必须要在协程作用域中使用，他会创建一个新的子协程并且返回一个Deferred对象，如果想要得到执行结果，调用await()函数即可
+            5 + 5
+        }.await()
+        println(result)
+    }
+}
+```
+我们来查看输出结果
+
+当调用await()方法时，如果代码块中的代码还没执行完，那么await()方法会将当前协程阻塞住，直到可以获取async函数的执行结果。
+
+我们编写代码加以证实：
+```kotlin
+fun main() {
+    runBlocking {
+        // 串行执行示例
+        val start = System.currentTimeMillis()
+        val result1 = async {
+            delay(1000)
+            5 + 5
+        }.await()
+        val result2 = async {
+            delay(1000)
+            4 + 6
+        }.await()
+        println("result is ${result1 + result2}")
+        val end = System.currentTimeMillis()
+        println("cost ${end - start} ms.")
+    }
+}
+```
+运行后注意观察执行时间。
+
+我们看到运行耗时是2105ms，说明这两个async函数确实是串行的关系，前一个执行完了后一个才能执行。
+
+换一种写法就能让async函数同时执行，实现并行效果。
+```kotlin
+fun main() {
+    runBlocking {
+        val start = System.currentTimeMillis()
+        val deferred1 = async {
+            delay(1000)
+            5 + 5
+        }
+        val deferred2 = async {
+            delay(1000)
+            4 + 6
+        }
+        println("result is ${deferred1.await() + deferred2.await()}")//先把所有结果计算完再await()，因为await()会阻塞当前协程
+        val end = System.currentTimeMillis()
+        println("cost ${end - start} ms.")
+    }
+}
+```
+执行函数，我们再来注意执行耗时。
+
+只有1094ms，很显然是并行执行的结果。
+
+- 最后来学习一个比较特殊的作用域构建器：**withContext()函数**。
+```kotlin
+fun test10() {
+    runBlocking {
+        //线程参数有三种
+        // Dispatchers.Default: 低并发线程策略，如计算密集型任务
+        // Dispatchers.IO: 高并发线程策略，当执行的代码大多数时间是在阻塞和等待中，如网络请求
+        // Dispatchers.Main: 更高的并发量，不会开启子线程，而是在Android主线程中运行，这个值只能在android项目中使用
+        val result = withContext(context = Dispatchers.Default) {
+            5 + 5
+        }
+        println(result)
+    }
+}
+```
+withContext的最后一行代码的执行结果会被作为函数的返回值返回。
+
+几种线程策略已经在上述代码中给出解释。其实其他所有的函数都是可以指定这样一个线程参与的，只不过**withContext()函数**是强制要求指定的，而其他的函数则是可选的。
+
+### 使用协程简化回调的写法
+**太累了，这个就先搁置吧**
