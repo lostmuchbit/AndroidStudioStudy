@@ -26,5 +26,26 @@ git log 查看历史提交信息
 git log id   可以查看指定id 的 记录
 
 git log -1   查看最后一次的提交记录
-12
+
+
+分支的用法
+在已有的代码基础上开辟一个分岔口，使得代码可以在主干线和分支线上同时进行开发(多用于版本控制)
+
+git branch version1.0 在已有分支上开辟一个version1.0的分支
+
+git checkout version1.0  从main分支切换到version1.0分支上
+
+git merge version1.0  把version1.0分支合并到main分支上
+
+git branch -D version1.0 不需要version1.0这个分支的时候把version1.0分支删除
+
+git clone http://github.com/example/test.git  把远程库克隆到本地
+
+git push origin master  把本地代码同步到master分支上
+
+git fetch origin master  把远程库上master分支上的修改同步到本地
+
+git diff origin/master   查看远程库中的修改
+
+git pull origin master   相当于把fetch和merge这两个命令一起执行，它可以从远程版本库上获取最新的代码并且合并到本地
 ```

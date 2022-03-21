@@ -2057,3 +2057,210 @@ withContext的最后一行代码的执行结果会被作为函数的返回值返
 
 ### 使用协程简化回调的写法
 **太累了，这个就先搁置吧**
+
+
+
+
+
+### 泛型上界使用测试
+```kotlin
+fun <T:Comparable<T>>minnT(vararg nums: T):T{
+    var minNum=nums[0]
+    for (num in nums){
+        if (num<minNum){
+            minNum=num
+        }
+    }
+    return minNum
+}
+```
+```kotlin
+封装Toast实验
+fun <T>T.showToast(context:Context,duration: Int=Toast.LENGTH_SHORT){
+    Toast.makeText(context,this.toString(),duration).show()
+}
+```
+```kotlin
+简化Snackbar用法
+fun <T:String>View.showSnackbar(text:String, action:T?=null,duration: Int=Snackbar.LENGTH_SHORT,
+                      block: (() -> Unit)? =null){
+    val snackbar=Snackbar.make(this,text,duration)
+    if(action!=null&&block!=null){
+        snackbar.setAction(action.toString()){
+            block()
+        }
+    }
+    snackbar.show()
+}
+```
+
+## 使用DSL构建专有的语法结构
+**DSL的全称是领域特定语言**，他是编程语言赋予开发者的一种特殊能力,通过他我们能编写出一些看似脱离其原始语言结构的代码，从而构建出一种转悠的语法结构
+**比如**infix函数就属于DSL
+
+### 学习高阶函数来实现DSL
+**导包**
+```xml
+dependencies {
+    ···
+    implementation 'com.squareup.retrofit2:retrofit:2.6.1'
+    implementation 'com.squareup.retrofit2:converter-gson:2.6.1'
+}
+```
+**kotlin模拟groovy导包**
+```kotlin
+class Dependency{
+    val libraries=ArrayList<String>()
+    //libraries中添加依赖库
+
+    fun implementation(lib:String){
+        libraries.add(lib)
+    }
+}
+
+fun dependencies(block: Dependency.()->Unit):List<String>{
+    val dependency=Dependency()
+    dependency.block()
+    return dependency.libraries
+}
+
+fun main(){
+    val libs=dependencies {
+        implementation("com.example.de1")
+        implementation("com.example.de2")
+    }
+
+    for (lib in libs)
+        println(lib)
+}
+```
+**模拟动态生成表格所对应的HTML代码**
+```html
+<table>
+    <tr>
+        <td>Apple</td>
+        <td>Grape</td>
+        <td>Orange</td>
+    </tr>
+    <tr>
+        <td>Pear</td>
+        <td>Banana</td>
+        <td>Watermelon</td>
+    </tr>
+</table>
+```
+```kotlin
+class Td {
+    var content=""
+    fun html()="\n\t\t<td>$content</td>"
+    /*<td>是一个单元格的意思*/
+}
+
+class Tr{
+    private val children=ArrayList<Td>()
+
+    fun td(block:Td.()->String){
+        val td=Td()
+        td.content=td.block()
+        children.add(td)
+    }
+
+    fun html():String{
+        val builder=StringBuilder()
+        builder.append("\n\t<tr>")
+        for (childTag in children)
+            builder.append(childTag.html())
+        builder.append("\n\t</tr>")
+        return builder.toString()
+    }
+}
+
+class Table{
+    private val children=ArrayList<Tr>()
+
+    fun tr(block: Tr.() -> Unit){
+        val tr=Tr()
+        tr.block()
+        children.add(tr)
+    }
+
+    fun html():String{
+        val builder=StringBuilder()
+        builder.append("<table>")
+        for (childTag in children)
+            builder.append(childTag.html())
+        builder.append("\n</table>")
+        return builder.toString()
+    }
+}
+
+fun table(block: Table.() -> Unit):String{
+    val table=Table()
+    table.block()
+    return table.html()
+}
+
+fun main() {
+    val html = table {//调用table的时候会自动创建一个Table,然后代码块会拥有Table的上下文
+        tr {
+            td { "Apple" }
+            td { "Grape" }
+            td { "Orange" }
+        }
+        tr {
+            td { "Pear" }
+            td { "Banana" }
+            td { "Watermelon" }
+        }
+    }
+    println(html)
+}
+```
+
+## 嵌套类和内部类
+1.嵌套类(Nested Classes)
+类可以嵌套在其他类中,不能访问外部类成员:
+```kotlin
+    class Outer {
+        private val bar: Int = 1
+        class Nest {
+            //嵌套类不能访问外部类成员,相当于java的static 静态内部类
+            fun foo() = 2
+        }
+    }
+    fun main(args: Array<String>) {
+        //创建嵌套类Nest对象,不需要外部类Outer对象
+        println(Outer.Nest().foo()) //输出2
+    }
+```
+2.内部类(Inner classes)
+类标记为inner,可以访问外部类成员:
+```kotlin
+    class Outer {
+        private val bar: Int = 1
+        inner class Inner {
+            //内部类可以访问外部类成员,可看作外部类对象的一个成员
+            fun foo() = bar
+        }
+    }
+    fun main(args: Array<String>) {
+        //创建内部类Inner对象,需要外部类Outer对象
+        val outer = Outer()
+        println(outer.Inner().foo()) //输出1
+    }
+```
+3.匿名内部类(Anonymous inner classes)
+用对象表达式,创建匿名内部类的实例:
+```kotlin
+    window.addMouseListener(
+        object: MouseAdapter() {
+            override fun mouseClicked(e: MouseEvent) {
+                ...
+            }
+
+            override fun mouseEntered(e: MouseEvent){
+                ...
+            }
+        }
+    )
+```

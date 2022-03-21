@@ -336,7 +336,7 @@ import kotlin.properties.Delegates
 //    println("名称最短的那个名词是: " + minLengthName)
 
 //    lambda其实就是一小段可以作为参数传递的代码
-//    lamdda的语法结构:    {参数名1:参数类型,参数名2:参数类型:参数类型->函数体}
+//    lambda的语法结构:    {参数名1:参数类型,参数名2:参数类型:参数类型->函数体}
 //    函数体内可以编写任意代码，不建议太长,并且函数体的最后一行代码会自动作为返回值返回
 //    让我们一步一步化繁为简
 //    val list = listOf("hhh", "hh", "h", "hhhh")

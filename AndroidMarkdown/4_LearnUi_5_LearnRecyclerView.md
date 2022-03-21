@@ -164,6 +164,7 @@ class MainActivity : AppCompatActivity() {
 
         initFruits()
 
+        //StaggeredGridLayoutManager瀑布流的布局管理器,此处是指一行3个，每个的高度随机
         val layoutManager=StaggeredGridLayoutManager(3,StaggeredGridLayoutManager.VERTICAL)
         recyclerView.layoutManager=layoutManager
         val adapter=FruitAdapter(fruitList)
