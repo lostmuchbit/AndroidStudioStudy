@@ -353,7 +353,7 @@ object Repository {
 class MainViewModel(countReserved:Int):ViewModel() {
     ···
     fun getUser(userId:String):LiveData<User>{
-        return Repository.getUser(userId)
+        return Revisibilitypository.getUser(userId)
     }
     ···
 }

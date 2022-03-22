@@ -2056,11 +2056,101 @@ withContext的最后一行代码的执行结果会被作为函数的返回值返
 几种线程策略已经在上述代码中给出解释。其实其他所有的函数都是可以指定这样一个线程参与的，只不过**withContext()函数**是强制要求指定的，而其他的函数则是可选的。
 
 ### 使用协程简化回调的写法
-**太累了，这个就先搁置吧**
+**suspendCoroutine能将传统回调机制的写法大幅简化**
+- suspendCoroutine()函数必须要在协程作用域或者挂起函数中才能调用
+- 接收一个lambda表达式，主要作用就是将当前的协程挂起，然后在一个不同的线程中执行lambda表达式中代码
+- lambda表达式参数列表会传入一个Continuation参数，调用他的resume方法或者resumeWithException()可以让协程恢复执行
 
+```kotlin
+suspend fun request(address: String): String {
+    return suspendCoroutine { continuation ->
+        HttpUtil.sendHttpRequest(address, object HttpCallbackListener {
+            override fun onFinish(response: String) {
+                continuation.resume(response)//恢复被挂起的协程，response成为suspendCoroutine函数的返回值
+            }
 
+            override fun onError(e: Exception) {
+                continuation.resumeWithException(e)
+            }
+        })
+    }
+}
 
+suspend fun getBaiduResponse() {
+    try {
+        val response = request("https://www.baidu.com")
+        //当request()发起请求，这个协程就会挂起，直到获取数据或者报异常
+    } catch (e: Exception) {
+         //异常处理
+    }
+}
+```
 
+**suspendCoroutine简化Retrofit发起网络请求**
+```kotlin
+val appService = ServiceCreator.create<AppService>()
+appService.getAppData().enqueue(object : Callback> {
+    override fun onFailure(call: Call, t: Throwable) {
+        // 在这里对异常情况进行处理
+    }
+
+    override fun onResponse(call: Call, response: Response>) {
+            // 得到服务器返回的数据
+    }
+})
+```
+使用suspendCoroutine 函数，我们马上就能对上诉写法进行大幅度的简化。
+
+由于不同的Service 接口返回的数据类型也不同，所以这次我们不能像刚才那样针对具体的类型进行编程了，而是要使用泛型的方式。定义一个await() 函数，代码如下所示：
+```kotlin
+suspend fun<T> Call<T>.await():T{
+    return suspendCoroutine {
+        enqueue(object :Callback{
+            override fun onFailure(call: Call, t: Throwable) {
+                it.resumeWithException(t)
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                val body = response.body()
+                if (body != null){
+                    it.resume(body)
+                }else{
+                    it.resumeWithException(RuntimeException(" response body is null"))
+                }
+            }
+
+        })
+    }
+}
+```
+首先await() 函数仍然是一个挂起函数，然后我们给它声明了一个泛型T，并将await() 函数定义成了Call 的扩展函数，这样所有返回值是Call 类型的Retrofit 网络请求接口就都可以直接调用await() 函数了。
+
+接着，await() 函数中使用了suspendCoroutine 函数来挂起当前协程，并由于扩展函数的原因，我们现在拥有了Call 对象的上下文，那么这里就可以直接调用enqueue() 方法让Retrofit 发起网络请求。接下来，使用同样的方式对 Retrofit 响应的数据或网络请求失败的情况进行处理就可以了。另外还有一点需要注意，在onResponse() 回调当中，我们调用body() 方法解析出来的对象是可能为空的。如果为空的话，这里的做法是手动抛出一个异常，你也可以根据自己的逻辑进行更加合适的处理。
+
+有了await() 函数之后，我们调用所有Retrofit 的Service 接口都会变得极其简单，比如刚才回调的功能就可以使用如下写法进行实现：
+```kotlin
+suspend fun getAppData(){
+    try {
+        val appList = ServiceCreator.create().getAppData().await()
+        // 对服务器响应的数据进行处理
+    }catch (e:Exception){
+        // 对异常情况进行处理
+    }
+}
+```
+it 发起网络请求。接下来，使用同样的方式对 Retrofit 响应的数据或网络请求失败的情况进行处理就可以了。另外还有一点需要注意，在onResponse() 回调当中，我们调用body() 方法解析出来的对象是可能为空的。如果为空的话，这里的做法是手动抛出一个异常，你也可以根据自己的逻辑进行更加合适的处理。
+
+有了await() 函数之后，我们调用所有Retrofit 的Service 接口都会变得极其简单，比如刚才回调的功能就可以使用如下写法进行实现：
+```kotlin
+suspend fun getAppData(){
+    try {
+        val appList = ServiceCreator.create().getAppData().await()
+        // 对服务器响应的数据进行处理
+    }catch (e:Exception){
+        // 对异常情况进行处理
+    }
+}
+```
 
 ### 泛型上界使用测试
 ```kotlin
